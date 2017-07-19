@@ -22,8 +22,6 @@ def main():
         output = np.memmap(output_mm, dtype='uint8', mode='w+', shape=(frames.shape[0] * alpha, *frames.shape[1:]))
 
         for i in tqdm(range(output.shape[0])):
-            output[i] = np.zeros(output[i].shape)
-            continue
             if i % alpha == 0:
                 output[i] = frames[i // alpha]
             else:
