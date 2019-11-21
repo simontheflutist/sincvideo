@@ -15,10 +15,13 @@ def main():
     args = parser.parse_args()
 
     alpha = args.alpha
-    frames = skvideo.io.vread(args.input)
+    frames_np = skvideo.io.vread(args.input)
 
     # memorymap the output buffer because this file could be huge
-    with tempfile.TemporaryFile() as output_mm:
+    with tempfile.TemporaryFile() as output_mm, \
+         tempfile.TemporaryFile() as input_mm:
+        frames = np.memmap(input_mm, dtype='uint8', mode='w+', shape=frames_np.shape)
+        frames[:] = frames_np[:]
         output = np.memmap(output_mm, dtype='uint8', mode='w+', shape=(frames.shape[0] * alpha, *frames.shape[1:]))
 
         for i in tqdm(range(output.shape[0])):
