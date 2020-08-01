@@ -34,7 +34,7 @@ def get_frame_windows(frames, width=3):
 def frame_weighted_avg(frames, weights):
     # frames = np.asarray(list(frames), 'float32')
     # weights = np.fromiter(weights, 'float32')
-    return np.tensordot(weights.astype('float32'), frames, axes=1) / sum(weights)
+    return np.tensordot(weights.astype('float32'), np.array(frames).astype('float32'), axes=1) / sum(weights)
     # frame = next(frames)
     # denom = next(weights)
     # frame *= denom
@@ -70,12 +70,8 @@ def resize_frame(frame):
 
 
 def write_frames(frames, filename):
-    i = 0
     with skvideo.io.FFmpegWriter(filename) as writer:
         for frame in frames:
-            i += 1
-            if i == 10:
-                return
             writer.writeFrame(frame)
 
 
