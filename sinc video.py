@@ -3,6 +3,8 @@ import numpy as np
 import skvideo.io
 import argparse
 from tqdm import tqdm
+import PIL
+from PIL import Image
 
 
 def image_thresh(a):
@@ -17,7 +19,7 @@ def image_thresh(a):
 def get_frame_windows(frames, width=3):
     """Return runs of frames."""
     buf = []
-    frames = (frame.astype('float64') for frame in frames)
+    frames = (frame.astype('float32') for frame in frames)
     while len(buf) < width:
         try:
             buf.append(next(frames))
@@ -30,15 +32,18 @@ def get_frame_windows(frames, width=3):
 
 
 def frame_weighted_avg(frames, weights):
-    frame = next(frames)
-    denom = next(weights)
-    frame *= denom
-
-    for (f, w) in zip(frames, weights):
-        frame += f * w
-        denom += w
-
-    return frame / denom
+    # frames = np.asarray(list(frames), 'float32')
+    # weights = np.fromiter(weights, 'float32')
+    return np.tensordot(weights.astype('float32'), frames, axes=1) / sum(weights)
+    # frame = next(frames)
+    # denom = next(weights)
+    # frame *= denom
+    #
+    # for (f, w) in zip(frames, weights):
+    #     frame += f * w
+    #     denom += w
+    #
+    # return frame / denom
 
 
 def sinc_interp_frames(windows, factor=2):
@@ -51,14 +56,26 @@ def sinc_interp_frames(windows, factor=2):
                        - i / factor)
             weights = np.sinc(offsets)
 
-            frame = image_thresh(frame_weighted_avg(iter(window),
-                                                    iter(weights)))
+            frame = frame_weighted_avg((window), (weights))
+            # frame = resize_frame(frame[0, 0, :])
+            frame = image_thresh(frame)
             yield frame
 
 
+def resize_frame(frame):
+    frame_img = Image.fromarray(frame)
+    frame = np.asarray(frame_img.resize((3840, 2160),
+                                        resample=Image.LANCZOS))
+    return frame
+
+
 def write_frames(frames, filename):
+    i = 0
     with skvideo.io.FFmpegWriter(filename) as writer:
         for frame in frames:
+            i += 1
+            if i == 10:
+                return
             writer.writeFrame(frame)
 
 
@@ -75,12 +92,14 @@ def main():
 
     args = parser.parse_args()
 
-    frame_reader = skvideo.io.vreader(args.input)
+    frame_reader = skvideo.io.FFmpegReader(args.input)
     result_frames = sinc_interp_frames(
         get_frame_windows(frame_reader,
-                          width=20),
+                          width=256),
         factor=args.alpha)
-    write_frames(tqdm(result_frames), args.output)
+    write_frames(tqdm(result_frames,
+                      total=frame_reader.getShape()[0] * args.alpha),
+                 args.output)
 
 
 if __name__ == '__main__':
