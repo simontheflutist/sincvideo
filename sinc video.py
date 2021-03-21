@@ -42,38 +42,43 @@ def sinc_interp_frames(windows, factor=2):
     for window in windows:
         window_size = len(window)
         for i in range(factor):
-            weights = create_weights_old(i / factor, window_size)
-
+            weights = create_weights_180(i, factor, window_size)
             frame = frame_weighted_avg((window), (weights))
-            # frame = resize_frame(frame[0, 0, :])
             frame = image_thresh(frame)
             yield frame
 
 
-def create_weights_old(pos, window_size):
+def create_weights_old(pos, factor, window_size):
     """
     Pos: position between 0 and 1 that this new frame is sampled from
     """
-    # fractional offsets, for sinc.
-    # +0.5 to get in between frames and avoid "collapsing" on impulse
     offsets = (np.arange(-window_size // 2,
                          -window_size // 2 + window_size)
-               - pos) + 0.5
+               - pos / factor) + 0.5
     weights = np.sinc(offsets)
     return weights
 
 
-def resize_frame(frame):
-    frame_img = Image.fromarray(frame)
-    # frame = np.asarray(frame_img.resize((3840, 2160),
-    #                                     resample=Image.LANCZOS))
-    return frame
+def create_weights_180(pos, factor, window_size):
+    """
+    Pos: position between 0 and 1 that this new frame is sampled from
+    """
+    n_samples = 20
+    weights = np.zeros(window_size)
+
+    for j in range(n_samples):
+        offsets = (np.arange(-window_size // 2,
+                             -window_size // 2 + window_size)
+                   - (pos + 0.5 * j / n_samples) / factor)
+        weights += np.sinc(offsets)
+
+    return weights / n_samples
 
 
-def write_frames(frames, filename, limit=600):
+def write_frames(frames, filename, limit=240):
     with create_writer(filename) as writer:
         for i, frame in enumerate(frames):
-            if limit and i > limit:
+            if limit != -1 and i >= limit:
                 break
             writer.writeFrame(frame)
 
@@ -90,12 +95,20 @@ def create_writer(filename):
 
 
 def main():
-    # parse commandline args
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-a', '--alpha',
         help='The integral coefficient by which to increase the number of '
-        'frames (e.g. alpha=2 yields 2x slow motion).', type=int)
+        'frames (e.g. alpha=2 yields 2x slow motion).', required=True, type=int)
+    parser.add_argument(
+        '-b', '--buffer',
+        help='The size of the frame buffer used for making new frames. '
+        'Bigger is better, but uses more memory.', required=True, type=int)
+    parser.add_argument(
+        '-n', '--outputframes',
+        help='The number of frames to output. If empty, process the whole video',
+        default=-1,
+        type=int)
     parser.add_argument('input', help='Video file for input')
     parser.add_argument(
         'output', help='Video file to write the scaled version  to.')
@@ -105,11 +118,16 @@ def main():
     frame_reader = skvideo.io.FFmpegReader(args.input)
     result_frames = sinc_interp_frames(
         get_frame_windows(frame_reader,
-                          width=12),
+                          width=args.buffer),
         factor=args.alpha)
+
+    total_frames = (args.outputframes
+                    if args.outputframes != -1
+                    else frame_reader.getShape()[0] * args.alpha)
     write_frames(tqdm(result_frames,
-                      total=frame_reader.getShape()[0] * args.alpha),
-                 args.output)
+                      total=total_frames),
+                 args.output,
+                 args.outputframes)
 
 
 if __name__ == '__main__':
