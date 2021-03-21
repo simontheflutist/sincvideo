@@ -38,41 +38,39 @@ def frame_weighted_avg(frames, weights):
     ) / sum(weights)
 
 
-def sinc_interp_frames(windows, factor=2):
+def sinc_interp_frames(windows, window_length, factor=2):
+    weights_vectors = create_weights_180(factor, window_length)
     for window in windows:
-        window_size = len(window)
         for i in range(factor):
-            weights = create_weights_180(i, factor, window_size)
+            weights = weights_vectors[i]
             frame = frame_weighted_avg((window), (weights))
             frame = image_thresh(frame)
             yield frame
 
 
-def create_weights_old(pos, factor, window_size):
+def create_weights_180(factor, window_size, samples=10000):
     """
-    Pos: position between 0 and 1 that this new frame is sampled from
+    Return a list of FACTOR coefficient vectors, each WINDOW_SIZE in length.
+    These represent the FACTOR new frames generated for each frame in the input
+    to this program.
+
+    SAMPLES is how many samples we should take to approximate 180 degree shutter.
+    If SAMPLES=1, then the weights will result in sampling a 0 degree shutter.
+    A higher value results in a more convincing 180 degree shutter. Not very
+    costly because it only has to get called once.
     """
-    offsets = (np.arange(-window_size // 2,
-                         -window_size // 2 + window_size)
-               - pos / factor) + 0.5
-    weights = np.sinc(offsets)
-    return weights
+    weights_vectors = []
 
+    for i in range(factor):
+        weights = np.zeros(window_size)
+        for j in range(samples):
+            offsets = (np.arange(-window_size // 2,
+                                 -window_size // 2 + window_size)
+                       - (i + 0.5 * j / samples) / factor)
+            weights += np.sinc(offsets)
+        weights_vectors.append(weights / samples)
 
-def create_weights_180(pos, factor, window_size):
-    """
-    Pos: position between 0 and 1 that this new frame is sampled from
-    """
-    n_samples = 20
-    weights = np.zeros(window_size)
-
-    for j in range(n_samples):
-        offsets = (np.arange(-window_size // 2,
-                             -window_size // 2 + window_size)
-                   - (pos + 0.5 * j / n_samples) / factor)
-        weights += np.sinc(offsets)
-
-    return weights / n_samples
+    return weights_vectors
 
 
 def write_frames(frames, filename, limit=240):
@@ -113,17 +111,31 @@ def main():
     parser.add_argument(
         'output', help='Video file to write the scaled version  to.')
 
+    # commandline arguments. also prints error/help and exits here if necessary
     args = parser.parse_args()
 
+    # generates all frames in order
     frame_reader = skvideo.io.FFmpegReader(args.input)
-    result_frames = sinc_interp_frames(
-        get_frame_windows(frame_reader,
-                          width=args.buffer),
-        factor=args.alpha)
 
+    # buffers the frames into runs of a fixed size
+    windows = get_frame_windows(
+        frame_reader,
+        width=args.buffer
+    )
+
+    # at this step each run results in FACTOR frames
+    result_frames = sinc_interp_frames(
+        windows,
+        window_length=args.buffer,
+        factor=args.alpha
+    )
+
+    # count total number of output frames for reporting progress
     total_frames = (args.outputframes
                     if args.outputframes != -1
                     else frame_reader.getShape()[0] * args.alpha)
+
+    # iterate through output frames and write them to disk
     write_frames(tqdm(result_frames,
                       total=total_frames),
                  args.output,
