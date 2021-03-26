@@ -33,10 +33,14 @@ def get_frame_windows(frames, width=3):
 
 
 def frame_weighted_avg(frames, weights):
-    return np.tensordot(
-        weights.astype('float32'),
-        np.array(frames).astype('float32'), axes=1
-    )
+    # return np.tensordot(
+    #     weights.astype('float32'),
+    #     np.array(frames).astype('float32'), axes=1
+    # )
+    out = np.zeros_like(frames[0])
+    for i, frame in enumerate(frames):
+        out += frame * weights[i]
+    return out
 
 
 def sinc_interp_frames(windows, window_size, ratio, factor=2):
@@ -102,8 +106,19 @@ def write_frames(frames, filename, limit=240):
 
 def create_writer(filename):
     fps = 30
-    inputdict = {'-r': str(fps)}
-    outputdict = {'-r': str(fps)}
+    inputdict = {
+        '-r': str(fps)
+    }
+    outputdict = {
+        '-r': str(fps),
+        # a tutorial had this codec
+        '-vcodec': 'libx264',
+        # youtube recommends this for 4k uploads,
+        '-b': '68M',
+        # supposed to reduce deblocking
+        '-tune': 'film'
+    }
+
     return skvideo.io.FFmpegWriter(
         filename,
         inputdict=inputdict,
@@ -159,7 +174,9 @@ def main():
     # it's quite approximate lol
     total_frames = (args.outputframes
                     if args.outputframes != -1
-                    else frame_reader.getShape()[0] * args.alpha)
+                    else (
+                        frame_reader.getShape()[0] - args.buffer // 2
+                    ) * args.alpha)
 
     # iterate through output frames and write them to disk
     write_frames(tqdm(result_frames,
