@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
+from scipy.special import sici
 import skvideo.io
 import argparse
 from tqdm import tqdm, trange
@@ -35,13 +36,12 @@ def frame_weighted_avg(frames, weights):
     return np.tensordot(
         weights.astype('float32'),
         np.array(frames).astype('float32'), axes=1
-    ) / sum(weights)
+    )
 
 
-def sinc_interp_frames(windows, window_length, factor=2):
-    weights_vectors = create_weights_180(factor, window_length)
+def sinc_interp_frames(windows, window_size, ratio, factor=2):
+    weights_vectors = create_weights(factor, ratio, window_size)
 
-    print("Rendering frames.")
     for window in windows:
         for i in range(factor):
             weights = weights_vectors[i]
@@ -50,28 +50,44 @@ def sinc_interp_frames(windows, window_length, factor=2):
             yield frame
 
 
-def create_weights_180(factor, window_size, samples=100000):
+def sinc_antiderivative(t):
+    si, ci = sici(np.pi * t)
+    return si
+
+
+def create_weights(factor, ratio, window_size):
     """
     Return a list of FACTOR coefficient vectors, each WINDOW_SIZE in length.
-    These represent the FACTOR new frames generated for each frame in the input
+    These yield the FACTOR new frames generated for each frame in the input
     to this program.
 
-    SAMPLES is how many samples we should take to approximate 180 degree shutter.
-    If SAMPLES=1, then the weights will result in sampling a 0 degree shutter.
-    A higher value results in a more convincing 180 degree shutter. Not very
-    costly because it only has to get called once.
+    RATIO represents shutter speed in the new timeline, assuming
+    that the original frames were capture with a 0 degree shutter.
+        - If RATIO is 0, then the result is a 0 degree shutter.
+        - If RATIO is 0.5, then the result is a 180 degree shutter.
+        - If RATIO is greater than 1, than the result is a shutter longer
+          than the framerate?
+
+
+    Suppose that the Arabic numerals represent frames from the old timeline
+    and that the letters
     """
-    print("Computing weights:")
     weights_vectors = []
 
-    for i in trange(factor):
-        weights = np.zeros(window_size)
-        for j in range(samples):
-            offsets = (np.arange(-window_size // 2,
-                                 -window_size // 2 + window_size)
-                       - (i + 0.5 * j / samples) / factor)
-            weights += np.sinc(offsets)
-        weights_vectors.append(weights / samples)
+    for i in range(factor):
+        starts = (np.arange(-window_size // 2,
+                            -window_size // 2 + window_size)
+                  - i / factor)
+
+        # special case for 0 degree shutter
+        if ratio == 0:
+            weights = np.sinc(starts)
+        # otherwise we integrate a little bit
+        else:
+            width = ratio / factor
+            ends = starts + width
+            weights = sinc_antiderivative(ends) - sinc_antiderivative(starts)
+        weights_vectors.append(weights / np.sum(weights))
 
     return weights_vectors
 
@@ -106,6 +122,11 @@ def main():
         help='The size of the frame buffer used for making new frames. '
         'Bigger is better, but uses more memory.', required=True, type=int)
     parser.add_argument(
+        '-r', '--ratio',
+        help='Shutter/frame in the new timeline. 0.5 is 180 degrees.',
+        required=True,
+        type=float)
+    parser.add_argument(
         '-n', '--outputframes',
         help='The number of frames to output. If empty, process the whole video',
         default=-1,
@@ -129,7 +150,8 @@ def main():
     # at this step each run results in FACTOR frames
     result_frames = sinc_interp_frames(
         windows,
-        window_length=args.buffer,
+        window_size=args.buffer,
+        ratio=args.ratio,
         factor=args.alpha
     )
 
