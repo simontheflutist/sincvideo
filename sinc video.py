@@ -71,10 +71,6 @@ def create_weights(factor, ratio, window_size):
         - If RATIO is 0.5, then the result is a 180 degree shutter.
         - If RATIO is greater than 1, than the result is a shutter longer
           than the framerate?
-
-
-    Suppose that the Arabic numerals represent frames from the old timeline
-    and that the letters
     """
     weights_vectors = []
 
