@@ -88,9 +88,11 @@ def create_weights(factor, ratio, window_size):
             weights = np.sinc(starts)
         # otherwise we integrate a little bit
         else:
-            width = ratio / factor
-            ends = starts + width
-            weights = sinc_antiderivative(ends) - sinc_antiderivative(starts)
+            half_width = ratio / factor
+            weights = (
+                sinc_antiderivative(starts + half_width)
+                - sinc_antiderivative(starts - half_width)
+            )
         weights_vectors.append(weights / np.sum(weights))
 
     return weights_vectors
