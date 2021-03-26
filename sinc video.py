@@ -2,7 +2,7 @@
 import numpy as np
 import skvideo.io
 import argparse
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import PIL
 from PIL import Image
 
@@ -40,6 +40,8 @@ def frame_weighted_avg(frames, weights):
 
 def sinc_interp_frames(windows, window_length, factor=2):
     weights_vectors = create_weights_180(factor, window_length)
+
+    print("Rendering frames.")
     for window in windows:
         for i in range(factor):
             weights = weights_vectors[i]
@@ -48,7 +50,7 @@ def sinc_interp_frames(windows, window_length, factor=2):
             yield frame
 
 
-def create_weights_180(factor, window_size, samples=10000):
+def create_weights_180(factor, window_size, samples=100000):
     """
     Return a list of FACTOR coefficient vectors, each WINDOW_SIZE in length.
     These represent the FACTOR new frames generated for each frame in the input
@@ -59,9 +61,10 @@ def create_weights_180(factor, window_size, samples=10000):
     A higher value results in a more convincing 180 degree shutter. Not very
     costly because it only has to get called once.
     """
+    print("Computing weights:")
     weights_vectors = []
 
-    for i in range(factor):
+    for i in trange(factor):
         weights = np.zeros(window_size)
         for j in range(samples):
             offsets = (np.arange(-window_size // 2,
@@ -130,7 +133,8 @@ def main():
         factor=args.alpha
     )
 
-    # count total number of output frames for reporting progress
+    # count total number of output frames for reporting progress.
+    # it's quite approximate lol
     total_frames = (args.outputframes
                     if args.outputframes != -1
                     else frame_reader.getShape()[0] * args.alpha)
